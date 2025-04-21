@@ -1,0 +1,476 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<!-- AWP_In_Variable Name='"MyVariables".boolValue' -->
+<!-- AWP_In_Variable Name='"MyVariables".intValue' -->
+<!-- AWP_In_Variable Name='"MyVariables".stringValue' -->
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>S7-PLC AJAX Variable Example</title>
+
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .container { max-width: 800px; margin: 0 auto; }
+  .variable-box { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+  .value-display { font-weight: bold; color: #0066cc; }
+  button { padding: 8px 15px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+  button:hover { background-color: #004499; }
+  input[type="text"], input[type="number"] { padding: 8px; width: 200px; margin-right: 10px; }
+  .status { color: green; margin-top: 5px; display: none; }
+  #debugPanel { border: 1px solid #ccc; padding: 15px; margin-top: 30px; border-radius: 5px; background-color: #f9f9f9; }
+  #debugPanel h2 { color: #333; margin-top: 0; }
+  #debugContent { max-height: 300px; overflow-y: auto; font-family: monospace; background-color: #f0f0f0; padding: 10px; }
+  .debug-entry { border-bottom: 1px dashed #ccc; padding: 5px 0; }
+  .debug-entry .timestamp { color: #666; font-size: 0.9em; }
+  .debug-entry .request { color: #007700; }
+  .debug-entry .response { color: #0000cc; }
+  .debug-entry .error { color: #cc0000; }
+  .debug-controls { margin-top: 10px; }
+  .paused-indicator { color: #cc0000; font-weight: bold; display: none; margin-left: 10px; }
+</style>
+
+<script type="text/javascript">
+// HTML entity decoding function
+function decodeHTMLEntities(text) {
+    if (!text) return '';
+    
+    var textArea = document.createElement('textarea');
+    textArea.innerHTML = text;
+    var decoded = textArea.value;
+    
+    // Clean up any remaining quotes or entities that might surround the value
+    decoded = decoded.replace(/^['"]|['"]$/g, '');
+    
+    return decoded;
+}
+
+// String cleaner for display and handling
+function cleanString(str) {
+    if (typeof str !== "string") return str;
+    
+    // First decode HTML entities
+    str = decodeHTMLEntities(str);
+    
+    // Then remove any surrounding quotes that might be present in the data
+    str = str.replace(/^['"]|['"]$/g, '');
+    
+    return str;
+}
+
+// Debug functions
+var g_debugEnabled = true;
+var g_loggingPaused = false;
+var g_debugEntries = [];
+var g_maxDebugEntries = 50;
+
+function logDebug(type, message, data) {
+    if (!g_debugEnabled || g_loggingPaused) return;
+    
+    var now = new Date();
+    var timestamp = now.toLocaleTimeString() + "." + now.getMilliseconds().toString().padStart(3, '0');
+    
+    var entry = {
+        timestamp: timestamp,
+        type: type,
+        message: message,
+        data: data
+    };
+    
+    g_debugEntries.unshift(entry); // Add to beginning for newest first
+    
+    if (g_debugEntries.length > g_maxDebugEntries) {
+        g_debugEntries.pop(); // Remove oldest entry
+    }
+    
+    updateDebugDisplay();
+}
+
+function updateDebugDisplay() {
+    if (!g_debugEnabled) return;
+    
+    var debugContent = document.getElementById("debugContent");
+    if (!debugContent) return;
+    
+    debugContent.innerHTML = "";
+    
+    for (var i = 0; i < g_debugEntries.length; i++) {
+        var entry = g_debugEntries[i];
+        var entryDiv = document.createElement("div");
+        entryDiv.className = "debug-entry";
+        
+        var classType = entry.type.toLowerCase();
+        
+        var content = "<span class='timestamp'>" + entry.timestamp + "</span> ";
+        content += "<span class='" + classType + "'>[" + entry.type + "]</span> ";
+        content += entry.message;
+        
+        if (entry.data !== undefined && entry.data !== null) {
+            content += ": <pre>" + JSON.stringify(entry.data, null, 2) + "</pre>";
+        }
+        
+        entryDiv.innerHTML = content;
+        debugContent.appendChild(entryDiv);
+    }
+}
+
+function clearDebug() {
+    g_debugEntries = [];
+    updateDebugDisplay();
+}
+
+function toggleDebug() {
+    g_debugEnabled = !g_debugEnabled;
+    document.getElementById("debugPanel").style.display = g_debugEnabled ? "block" : "none";
+    document.getElementById("toggleDebugBtn").textContent = g_debugEnabled ? "Hide Debug Info" : "Show Debug Info";
+}
+
+function toggleLogging() {
+    g_loggingPaused = !g_loggingPaused;
+    document.getElementById("pauseResumeBtn").textContent = g_loggingPaused ? "Resume Logging" : "Pause Logging";
+    document.getElementById("pausedIndicator").style.display = g_loggingPaused ? "inline" : "none"; 
+    
+    if (!g_loggingPaused) {
+        // Add a log entry when resuming
+        logDebug("INFO", "Logging resumed", null);
+    }
+}
+
+// Browser detection
+var g_browser_ie = false;
+var g_browser_opera = false;
+var g_browser_firefox = false;
+
+function DetermineBrowser() {
+    var userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.indexOf("msie") >= 0) {
+        g_browser_ie = true;
+    } else if (userAgent.indexOf("opera") >= 0) {
+        g_browser_opera = true;
+    } else if (userAgent.indexOf("firefox") >= 0) {
+        g_browser_firefox = true;
+    }
+}
+
+// Create HTTP request object
+function GetXMLHttpRequestObj(xml) {
+    var httpRequest = null;
+
+    try {
+        if (window.XMLHttpRequest) {
+            httpRequest = new XMLHttpRequest();
+            if (httpRequest.overrideMimeType && xml) {
+                httpRequest.overrideMimeType('text/xml');
+            }
+        } else if (window.ActiveXObject) {
+            try {
+                httpRequest = new ActiveXObject("Msxml2.XMLHTTP");
+            } catch (e) {
+                try {
+                    httpRequest = new ActiveXObject("Microsoft.XMLHTTP");
+                } catch (e) {}
+            }
+        }
+    } catch (e) {}
+
+    return httpRequest;
+}
+
+// Send HTTP request
+function DoHttpRequest(userobj, url, proc, asynch, xml) {
+    var httpRequest = GetXMLHttpRequestObj(xml);
+    if (!httpRequest) {
+        logDebug("ERROR", "HttpRequest failed: cannot create", null);
+        alert("HttpRequest failed: cannot create");
+        return false;
+    }
+
+    userobj.userProc = proc;
+    userobj.httpRequest = httpRequest;
+    userobj.currUrl = url;
+    userobj.isXMLRequest = xml;
+
+    logDebug("REQUEST", "Sending request to", url);
+    
+    httpRequest.open('GET', url, asynch);
+    httpRequest.onreadystatechange = function() { HttpRequestHandler(userobj); };
+    httpRequest.setRequestHeader('If-Modified-Since', 'Sat, 1 Jan 2000 00:00:00 GMT');
+    httpRequest.send(null);
+    
+    if (g_browser_firefox && !asynch) {
+        HttpRequestHandler(userobj);
+    }
+    
+    httpRequest = null;
+    return true;
+}
+
+// HTTP request handler
+function HttpRequestHandler(userobj) {
+    var httpRequest = userobj.httpRequest;
+    if (httpRequest && httpRequest.readyState == 4) {
+        var userProc = userobj.userProc;
+        userobj.httpRequest = null;
+        userobj.userProc = null;
+        
+        var responseInfo = {
+            status: httpRequest.status,
+            responseText: httpRequest.responseText,
+            url: userobj.currUrl
+        };
+        
+        if (httpRequest.status === 200) {
+            logDebug("RESPONSE", "Received response from " + userobj.currUrl, responseInfo);
+        } else {
+            logDebug("ERROR", "Request failed with status " + httpRequest.status, responseInfo);
+        }
+        
+        if (userProc) {
+            userProc(userobj, httpRequest.responseText, httpRequest.status);
+        }
+    }
+}
+
+// Write variable to PLC via AJAX
+function writeVariable(variable, value) {
+    var req;
+    if (window.XMLHttpRequest) {
+        req = new XMLHttpRequest();
+    } else if (window.ActiveXObject) {
+        req = new ActiveXObject("Microsoft.XMLHTTP");
+    } else {
+        logDebug("ERROR", "Browser doesn't support AJAX", null);
+        alert("Browser doesn't support AJAX");
+        return;
+    }
+    
+    var statusId = variable.replace(/[^\w]/g, '') + "Status";
+    var statusElement = document.getElementById(statusId);
+    
+    // Fix: Don't double-encode the variable name
+    var req_url = "?" + variable + "=" + encodeURIComponent(value) + "&" + Math.random();
+    
+    logDebug("WRITE", "Writing variable to PLC", {
+        variable: variable,
+        value: value,
+        url: req_url
+    });
+    
+    req.open("GET", req_url, true);
+    req.onreadystatechange = function() {
+        if (req.readyState == 4) {
+            var responseInfo = {
+                status: req.status,
+                responseText: req.responseText,
+                url: req_url
+            };
+            
+            if (req.status == 200) {
+                logDebug("SUCCESS", "Variable updated successfully", responseInfo);
+                
+                if (statusElement) {
+                    statusElement.style.display = "block";
+                    statusElement.innerHTML = "Value updated successfully!";
+                    setTimeout(function() {
+                        statusElement.style.display = "none";
+                    }, 3000);
+                }
+            } else {
+                logDebug("ERROR", "Error updating value: " + req.status, responseInfo);
+                alert("Error updating value: " + req.status);
+            }
+        }
+    };
+    req.send(null);
+}
+
+// Write variable from input element
+function writeVariableFromInput(variable, inputId) {
+    var value = document.getElementById(inputId).value;
+    writeVariable(variable, value);
+}
+
+// Variables to store current state
+var g_bPageRequested = false;
+var g_currentValues = {
+    boolValue: false,
+    intValue: 0,
+    stringValue: ""
+};
+
+// Start periodic updates
+function Start() {
+    DetermineBrowser();
+    // Initialize with current values and clean them
+    g_currentValues.boolValue = :="MyVariables".boolValue:;
+    g_currentValues.intValue = :="MyVariables".intValue:;
+    
+    // Apply HTML entity decoding to string value
+    var rawString = ":="MyVariables".stringValue:";
+    g_currentValues.stringValue = cleanString(rawString);
+    
+    logDebug("INFO", "Initial values loaded from PLC (after cleaning)", g_currentValues);
+    
+    updateDisplay();
+    setTimeout("OnTimer()", 1000);
+}
+
+// Timer function to poll for updates
+function OnTimer() {
+    if (!g_bPageRequested) {
+        g_bPageRequested = true;
+        // Request update via AJAX with timestamp to prevent caching
+        DoHttpRequest(this, "read_variables.dat?" + new Date().getTime(), UpdateCallback, true);
+    }
+    setTimeout("OnTimer()", 1000); // Poll every second
+}
+
+// Parse response and update display
+function UpdateCallback(obj, response, status) {
+    g_bPageRequested = false;
+    
+    if (status === 200 && response) {
+        try {
+            // Parse the response from the .dat file which contains values in the format:
+            // :="MyVariables".boolValue: :="MyVariables".intValue: :="MyVariables".stringValue:
+            
+            // First, remove any HTML tags or whitespace that might be present
+            var cleanResponse = response.trim();
+            
+            // Log the raw response for debugging
+            logDebug("RAW", "Raw .dat response", {
+                raw: response,
+                cleaned: cleanResponse
+            });
+            
+            // Split the response by spaces to get individual values
+            // Find all values using a regex pattern that can handle spaces in strings
+            var matches = cleanResponse.match(/([^\s]+)\s+([^\s]+)\s+(.*)/);
+            
+            if (matches && matches.length >= 4) {
+                // Parse boolean value (convert string "true"/"false" to actual boolean) //This is old , delete both lines if this works.
+                //g_currentValues.boolValue = (matches[1].toLowerCase() === "true");
+				
+				// Parse boolean value (handle both "true"/"false" and "1"/"0" formats)
+				g_currentValues.boolValue = (matches[1].toLowerCase() === "true" || matches[1] === "1");
+                
+                // Parse integer value
+                g_currentValues.intValue = parseInt(matches[2], 10);
+                
+                // Get and clean string value (third match captures the rest of the line)
+                g_currentValues.stringValue = cleanString(matches[3]);
+                
+                logDebug("UPDATE", "Values updated from .dat file (after cleaning)", g_currentValues);
+                
+                // Update the UI with new values
+                updateDisplay();
+            } else {
+                logDebug("ERROR", "Invalid data format in .dat file", {
+                    response: response,
+                    matches: matches
+                });
+            }
+        } catch (e) {
+            logDebug("ERROR", "Error parsing variable_values.dat response", {
+                error: e.toString(),
+                response: response
+            });
+            console.error("Error parsing variable_values.dat response:", e);
+        }
+    } else if (status !== 200) {
+        logDebug("ERROR", "Failed to load .dat file", {
+            status: status,
+            response: response
+        });
+    }
+}
+
+// Update UI with current values
+function updateDisplay() {
+    document.getElementById("boolDisplay").innerHTML = g_currentValues.boolValue ? "TRUE" : "FALSE";
+    document.getElementById("intDisplay").innerHTML = g_currentValues.intValue;
+    
+    // Display the cleaned string value
+    document.getElementById("stringDisplay").innerHTML = g_currentValues.stringValue;
+    
+    // Update checkbox state without triggering the onchange event
+    var checkbox = document.getElementById("boolInput");
+    if (checkbox.checked !== g_currentValues.boolValue) {
+        checkbox.checked = g_currentValues.boolValue;
+    }
+    
+    // Update input fields to match current values
+    //document.getElementById("intInput").value = g_currentValues.intValue;
+    
+    // Set the clean value in the input field
+    //document.getElementById("stringInput").value = g_currentValues.stringValue;
+}
+
+// Toggle boolean value - FIXED
+function toggleBool() {
+    var newValue = document.getElementById("boolInput").checked;
+    
+    // Log what we're trying to do
+    console.log("Attempting to set boolean to: " + newValue);
+    
+    // Create the correct URL format that the PLC expects
+    var req_url = "?%22MyVariables%22.boolValue=" + (newValue ? "true" : "false") + "&" + Math.random();
+    
+    var req = new XMLHttpRequest();
+    req.open("GET", req_url, true);
+    req.onreadystatechange = function() {
+        if (req.readyState == 4) {
+            if (req.status == 200) {
+                console.log("Toggle successful");
+                // Optionally update the display immediately rather than waiting for next poll
+                document.getElementById("boolDisplay").innerHTML = newValue ? "TRUE" : "FALSE";
+            } else {
+                console.log("Toggle failed with status: " + req.status);
+            }
+        }
+    };
+    req.send(null);
+}
+</script>
+</head>
+
+<body onload="Start()">
+<div class="container">
+    <h1>S7-PLC Variable Interface</h1>
+    <p>This page demonstrates reading and writing PLC variables using AJAX.</p>
+    
+    <div class="variable-box">
+        <h2>Boolean Variable</h2>
+        <p>Current value: <span id="boolDisplay" class="value-display">false</span></p>
+        <input type="checkbox" id="boolInput" onchange="toggleBool()">
+        <label for="boolInput">Toggle value</label>
+        <div id="MyVariablesboolValueStatus" class="status"></div>
+    </div>
+    
+    <div class="variable-box">
+        <h2>Integer Variable</h2>
+        <p>Current value: <span id="intDisplay" class="value-display">0</span></p>
+        <input type="number" id="intInput" placeholder="Enter new value">
+        <button onclick="writeVariableFromInput('"MyVariables".intValue', 'intInput')">Update</button>
+        <div id="MyVariablesintValueStatus" class="status"></div>
+    </div>
+    
+    <div class="variable-box">
+        <h2>String Variable</h2>
+        <p>Current value: <span id="stringDisplay" class="value-display"></span></p>
+        <input type="text" id="stringInput" placeholder="Enter new text">
+        <button onclick="writeVariableFromInput('"MyVariables".stringValue', 'stringInput')">Update</button>
+        <div id="MyVariablesstringValueStatus" class="status"></div>
+    </div>
+    
+    <!-- Debug Panel -->
+    <div id="debugPanel">
+        <h2>Debug Information <span id="pausedIndicator" class="paused-indicator">[PAUSED]</span></h2>
+        <div id="debugContent"></div>
+        <div class="debug-controls">
+            <button onclick="clearDebug()">Clear Log</button>
+            <button id="pauseResumeBtn" onclick="toggleLogging()">Pause Logging</button>
+            <button id="toggleDebugBtn" onclick="toggleDebug()">Hide Debug Info</button>
+        </div>
+    </div>
+</div>
+</body>
+</html>
