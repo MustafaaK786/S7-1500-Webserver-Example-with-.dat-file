@@ -18,7 +18,7 @@
   .status { color: green; margin-top: 5px; display: none; }
   #debugPanel { border: 1px solid #ccc; padding: 15px; margin-top: 30px; border-radius: 5px; background-color: #f9f9f9; }
   #debugPanel h2 { color: #333; margin-top: 0; }
-  #debugContent { max-height: 300px; overflow-y: auto; font-family: monospace; background-color: #f0f0f0; padding: 10px; }
+  #debugContent { max-height: 300px; overflow-y: auto; scroll-behavior: smooth; font-family: monospace; background-color: #f0f0f0; padding: 10px; }
   .debug-entry { border-bottom: 1px dashed #ccc; padding: 5px 0; }
   .debug-entry .timestamp { color: #666; font-size: 0.9em; }
   .debug-entry .request { color: #007700; }
@@ -65,20 +65,22 @@ var g_maxDebugEntries = 50;
 function logDebug(type, message, data) {
     if (!g_debugEnabled || g_loggingPaused) return;
     
-    var now = new Date();
-    var timestamp = now.toLocaleTimeString() + "." + now.getMilliseconds().toString().padStart(3, '0');
+    const now = new Date();
+    const timestamp = now.toLocaleTimeString() + "." + now.getMilliseconds().toString().padStart(3, '0');
     
-    var entry = {
-        timestamp: timestamp,
-        type: type,
-        message: message,
-        data: data
+    const entry = {
+        timestamp,
+        type,
+        message,
+        data
     };
     
-    g_debugEntries.unshift(entry); // Add to beginning for newest first
+    // CHANGE: Add to END of array (newest at bottom)
+    g_debugEntries.push(entry);
     
+    // Keep log size manageable
     if (g_debugEntries.length > g_maxDebugEntries) {
-        g_debugEntries.pop(); // Remove oldest entry
+        g_debugEntries.shift(); // Remove OLDEST entry
     }
     
     updateDebugDisplay();
@@ -87,28 +89,34 @@ function logDebug(type, message, data) {
 function updateDebugDisplay() {
     if (!g_debugEnabled) return;
     
-    var debugContent = document.getElementById("debugContent");
+const debugContent = document.getElementById("debugContent");
     if (!debugContent) return;
     
-    debugContent.innerHTML = "";
+    // Store scroll state BEFORE update
+    const wasScrolledToBottom = 
+        debugContent.scrollTop + debugContent.clientHeight >= debugContent.scrollHeight - 5; // 5px tolerance
     
-    for (var i = 0; i < g_debugEntries.length; i++) {
-        var entry = g_debugEntries[i];
-        var entryDiv = document.createElement("div");
+    // Rebuild all entries
+    debugContent.innerHTML = "";
+    g_debugEntries.forEach(entry => {
+        const entryDiv = document.createElement("div");
         entryDiv.className = "debug-entry";
         
-        var classType = entry.type.toLowerCase();
-        
-        var content = "<span class='timestamp'>" + entry.timestamp + "</span> ";
-        content += "<span class='" + classType + "'>[" + entry.type + "]</span> ";
+        let content = `<span class='timestamp'>${entry.timestamp}</span> `;
+        content += `<span class='${entry.type.toLowerCase()}'>[${entry.type}]</span> `;
         content += entry.message;
         
-        if (entry.data !== undefined && entry.data !== null) {
-            content += ": <pre>" + JSON.stringify(entry.data, null, 2) + "</pre>";
+        if (entry.data) {
+            content += `<pre>${JSON.stringify(entry.data, null, 2)}</pre>`;
         }
         
         entryDiv.innerHTML = content;
         debugContent.appendChild(entryDiv);
+    });
+    
+    // Auto-scroll only if already near bottom
+    if (wasScrolledToBottom) {
+        debugContent.scrollTop = debugContent.scrollHeight;
     }
 }
 
@@ -124,14 +132,18 @@ function toggleDebug() {
     document.getElementById("toggleDebugBtn").textContent = g_debugEnabled ? "Hide Debug Info" : "Show Debug Info";
 }
 
+// Add this to preserve scroll position during pauses
 function toggleLogging() {
     g_loggingPaused = !g_loggingPaused;
     document.getElementById("pauseResumeBtn").textContent = g_loggingPaused ? "Resume Logging" : "Pause Logging";
     document.getElementById("pausedIndicator").style.display = g_loggingPaused ? "inline" : "none"; 
     
     if (!g_loggingPaused) {
-        // Add a log entry when resuming
-        logDebug("INFO", "Logging resumed", null);
+        // When resuming, force scroll to bottom
+        const debugContent = document.getElementById("debugContent");
+        if (debugContent) {
+            debugContent.scrollTop = debugContent.scrollHeight;
+        }
     }
 }
 
