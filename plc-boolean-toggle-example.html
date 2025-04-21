@@ -1,0 +1,124 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<!-- AWP_In_Variable Name='"MyVariables".boolValue' -->
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>S7-PLC Boolean Toggle Example</title>
+
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .container { max-width: 800px; margin: 0 auto; }
+  .variable-box { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+  .value-display { font-weight: bold; color: #0066cc; }
+  button { padding: 8px 15px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; }
+  button:hover { background-color: #004499; }
+  .status { color: green; margin-top: 10px; height: 20px; }
+</style>
+
+<script type="text/javascript">
+// Send AJAX request to update boolean value
+function send_ajax_request(variable, value) {
+    var req;
+    
+    if (window.XMLHttpRequest) {
+        req = new XMLHttpRequest();
+    } else if (window.ActiveXObject) {
+        req = new ActiveXObject("Microsoft.XMLHTTP");
+    } else {
+        alert("Browser doesn't support AJAX");
+        return;
+    }
+    
+    // Format the URL according to S7 web server requirements
+    // For boolean variables, S7 expects either 1 or 0
+    var boolValue = value ? 1 : 0;
+    
+    // Create URL with random parameter to prevent caching
+    var req_url = "?" + variable + "=" + boolValue + "&" + Math.random();
+    
+    // Debug output
+    document.getElementById("debugInfo").innerHTML = "Sending: " + req_url;
+    
+    req.open("GET", req_url, true);
+    req.onreadystatechange = function() {
+        if (req.readyState == 4) {
+            document.getElementById("requestStatus").innerHTML = "Response received, status: " + req.status;
+            if (req.status == 200) {
+                document.getElementById("status").innerHTML = "Value updated successfully!";
+                
+                // Update the display to reflect the new value
+                document.getElementById("boolDisplay").innerHTML = value ? "TRUE" : "FALSE";
+                document.getElementById("boolInput").checked = value;
+                
+                // Schedule a clear of the status message
+                setTimeout(function() {
+                    document.getElementById("status").innerHTML = "";
+                }, 3000);
+            } else {
+                document.getElementById("status").innerHTML = "Error updating value: " + req.status;
+            }
+        }
+    };
+    req.send(null);
+}
+
+// Function to set boolean value using direct button clicks
+function setBoolValue(value) {
+    send_ajax_request('%22MyVariables%22.boolValue', value);
+}
+
+// Function to toggle the current value
+function toggleBool() {
+    var currentValue = document.getElementById("boolInput").checked;
+    send_ajax_request('%22MyVariables%22.boolValue', currentValue);
+}
+
+// Initialize with current value on page load
+function initPage() {
+    // Get initial value from PLC - this will be replaced by actual value 
+    var initialValue = :="MyVariables".boolValue:;
+    
+    // Convert to boolean if it's not already
+    initialValue = (initialValue === true || initialValue === 1 || initialValue === "1");
+    
+    // Update the display
+    document.getElementById("boolDisplay").innerHTML = initialValue ? "TRUE" : "FALSE";
+    document.getElementById("boolInput").checked = initialValue;
+    
+    // Set initial debug info
+    document.getElementById("debugInfo").innerHTML = "Initial value: " + initialValue;
+}
+</script>
+</head>
+
+<body onload="initPage()">
+<div class="container">
+    <h1>S7-PLC Boolean Variable Toggle</h1>
+    <p>This page demonstrates toggling a boolean PLC variable using AJAX.</p>
+    
+    <div class="variable-box">
+        <h2>Boolean Variable</h2>
+        <p>Current value: <span id="boolDisplay" class="value-display">false</span></p>
+        
+        <div style="margin: 15px 0;">
+            <input type="checkbox" id="boolInput" onchange="toggleBool()">
+            <label for="boolInput">Toggle value</label>
+        </div>
+        
+        <div>
+            <p>Alternative direct controls:</p>
+            <button onclick="setBoolValue(true)">Set TRUE</button>
+            <button onclick="setBoolValue(false)">Set FALSE</button>
+        </div>
+        
+        <div class="status" id="status"></div>
+        
+        <div style="margin-top: 20px; border-top: 1px solid #ddd; padding-top: 10px;">
+            <h3>Debug Information:</h3>
+            <p id="debugInfo"></p>
+            <p id="requestStatus"></p>
+        </div>
+    </div>
+</div>
+</body>
+</html>
