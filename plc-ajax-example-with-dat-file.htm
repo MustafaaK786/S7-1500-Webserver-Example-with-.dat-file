@@ -1,0 +1,278 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<!-- AWP_In_Variable Name='"MyVariables".boolValue' -->
+<!-- AWP_In_Variable Name='"MyVariables".intValue' -->
+<!-- AWP_In_Variable Name='"MyVariables".stringValue' -->
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>S7-PLC AJAX Variable Example</title>
+
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  .container { max-width: 800px; margin: 0 auto; }
+  .variable-box { border: 1px solid #ddd; padding: 15px; margin-bottom: 20px; border-radius: 5px; }
+  .value-display { font-weight: bold; color: #0066cc; }
+  button { padding: 8px 15px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+  button:hover { background-color: #004499; }
+  input[type="text"], input[type="number"] { padding: 8px; width: 200px; margin-right: 10px; }
+  .status { color: green; margin-top: 5px; height: 20px; }
+  .debug { font-family: monospace; margin-top: 20px; border: 1px solid #ddd; padding: 10px; display: none; }
+</style>
+
+<script type="text/javascript">
+// Browser detection
+var g_browser_ie = false;
+var g_browser_opera = false;
+var g_browser_firefox = false;
+
+function DetermineBrowser() {
+    var userAgent = navigator.userAgent.toLowerCase();
+    if (userAgent.indexOf("msie") >= 0) {
+        g_browser_ie = true;
+    } else if (userAgent.indexOf("opera") >= 0) {
+        g_browser_opera = true;
+    } else if (userAgent.indexOf("firefox") >= 0) {
+        g_browser_firefox = true;
+    }
+}
+
+// Create HTTP request object
+function GetXMLHttpRequestObj(xml) {
+    var httpRequest = null;
+
+    try {
+        if (window.XMLHttpRequest) {
+            httpRequest = new XMLHttpRequest();
+            if (httpRequest.overrideMimeType && xml) {
+                httpRequest.overrideMimeType('text/xml');
+            }
+        } else if (window.ActiveXObject) {
+            try {
+                httpRequest = new ActiveXObject("Msxml2.XMLHTTP");
+            } catch (e) {
+                try {
+                    httpRequest = new ActiveXObject("Microsoft.XMLHTTP");
+                } catch (e) {}
+            }
+        }
+    } catch (e) {}
+
+    return httpRequest;
+}
+
+// Send HTTP request
+function DoHttpRequest(userobj, url, proc, asynch, xml) {
+    var httpRequest = GetXMLHttpRequestObj(xml);
+    if (!httpRequest) {
+        alert("HttpRequest failed: cannot create");
+        return false;
+    }
+
+    userobj.userProc = proc;
+    userobj.httpRequest = httpRequest;
+    userobj.currUrl = url;
+    userobj.isXMLRequest = xml;
+
+    httpRequest.open('GET', url, asynch);
+    httpRequest.onreadystatechange = function() { HttpRequestHandler(userobj); };
+    httpRequest.setRequestHeader('If-Modified-Since', 'Sat, 1 Jan 2000 00:00:00 GMT');
+    httpRequest.send(null);
+    
+    if (g_browser_firefox && !asynch) {
+        HttpRequestHandler(userobj);
+    }
+    
+    httpRequest = null;
+    return true;
+}
+
+// HTTP request handler
+function HttpRequestHandler(userobj) {
+    var httpRequest = userobj.httpRequest;
+    if (httpRequest && httpRequest.readyState == 4) {
+        var userProc = userobj.userProc;
+        userobj.httpRequest = null;
+        userobj.userProc = null;
+        
+        if (userProc) {
+            userProc(userobj, httpRequest.responseText, httpRequest.status);
+        }
+    }
+}
+
+// Write variable to PLC via AJAX
+function writeVariable(variable, value) {
+    var req;
+    if (window.XMLHttpRequest) {
+        req = new XMLHttpRequest();
+    } else if (window.ActiveXObject) {
+        req = new ActiveXObject("Microsoft.XMLHTTP");
+    } else {
+        alert("Browser doesn't support AJAX");
+        return;
+    }
+    
+    var statusId = variable.replace(/[^a-zA-Z0-9]/g, '') + "Status";
+    var statusElement = document.getElementById(statusId);
+    
+    // For boolean values, convert to 0 or 1
+    if (typeof value === "boolean") {
+        value = value ? 1 : 0;
+    }
+    
+    var req_url = "?" + variable + "=" + encodeURIComponent(value) + "&" + Math.random();
+    
+    // Debug output
+    document.getElementById("debugInfo").innerHTML = "Sending: " + req_url;
+    document.getElementById("debugInfo").parentNode.style.display = "block";
+    
+    req.open("GET", req_url, true);
+    req.onreadystatechange = function() {
+        if (req.readyState == 4) {
+            document.getElementById("requestStatus").innerHTML = "Response status: " + req.status;
+            if (req.status == 200) {
+                if (statusElement) {
+                    statusElement.innerHTML = "Value updated successfully!";
+                    setTimeout(function() {
+                        statusElement.innerHTML = "";
+                    }, 3000);
+                }
+            } else {
+                if (statusElement) {
+                    statusElement.innerHTML = "Error updating value: " + req.status;
+                }
+            }
+        }
+    };
+    req.send(null);
+}
+
+// Write variable from input element
+function writeVariableFromInput(variable, inputId) {
+    var value = document.getElementById(inputId).value;
+    writeVariable(variable, value);
+}
+
+// Variables to store current state
+var g_bPageRequested = false;
+var g_currentValues = {
+    boolValue: false,
+    intValue: 0,
+    stringValue: ""
+};
+
+// Start periodic updates
+function Start() {
+    DetermineBrowser();
+    // Initialize with current values
+    g_currentValues.boolValue = :="MyVariables".boolValue:;
+    g_currentValues.intValue = :="MyVariables".intValue:;
+    g_currentValues.stringValue = ":="MyVariables".stringValue:";
+    
+    updateDisplay();
+    setTimeout("OnTimer()", 1000);
+}
+
+// Timer function to poll for updates
+function OnTimer() {
+    if (!g_bPageRequested) {
+        g_bPageRequested = true;
+        // Request update via AJAX - this should point to a dat file containing your PLC variables
+        DoHttpRequest(this, "read_variables.dat", UpdateCallback, true);
+    }
+    setTimeout("OnTimer()", 1000); // Poll every second
+}
+
+// Parse response and update display
+function UpdateCallback(obj, response, status) {
+    document.getElementById("responseDebug").innerHTML = "Raw response: " + response;
+    document.getElementById("responseDebug").parentNode.style.display = "block";
+    
+    if (status < 300) {
+        try {
+            // Split the response by spaces
+            var values = response.trim().split(/\s+/);
+            
+            // Extract values - adjust this parsing logic based on your actual response format
+            if (values.length >= 3) {
+                // Convert boolean value - S7 typically returns 0/1 for booleans
+                g_currentValues.boolValue = (values[0] === "1" || values[0].toLowerCase() === "true");
+                
+                // Parse integer value - remove any non-numeric characters
+                var intVal = parseInt(values[1].replace(/\D/g, ''));
+                g_currentValues.intValue = isNaN(intVal) ? 0 : intVal;
+                
+                // Get string value
+                g_currentValues.stringValue = values[2].replace(/^["']|["']$/g, ''); // Remove quotes if present
+            }
+            
+            updateDisplay();
+        } catch (e) {
+            console.error("Error parsing response:", e);
+            document.getElementById("requestStatus").innerHTML = "Parse error: " + e.message;
+        }
+    } else {
+        document.getElementById("requestStatus").innerHTML = "Error status: " + status;
+    }
+    g_bPageRequested = false;
+}
+
+// Update UI with current values
+function updateDisplay() {
+    document.getElementById("boolDisplay").innerHTML = g_currentValues.boolValue ? "TRUE" : "FALSE";
+    document.getElementById("intDisplay").innerHTML = g_currentValues.intValue;
+    document.getElementById("stringDisplay").innerHTML = g_currentValues.stringValue;
+    
+    // Update checkbox state without triggering the onchange event
+    var checkbox = document.getElementById("boolInput");
+    if (checkbox.checked !== g_currentValues.boolValue) {
+        checkbox.checked = g_currentValues.boolValue;
+    }
+}
+
+// Toggle boolean value
+function toggleBool() {
+    var newValue = document.getElementById("boolInput").checked;
+    writeVariable('%22MyVariables%22.boolValue', newValue);
+}
+</script>
+</head>
+
+<body onload="Start()">
+<div class="container">
+    <h1>S7-PLC Variable Interface</h1>
+    <p>This page demonstrates reading and writing PLC variables using AJAX.</p>
+    
+    <div class="variable-box">
+        <h2>Boolean Variable</h2>
+        <p>Current value: <span id="boolDisplay" class="value-display">false</span></p>
+        <input type="checkbox" id="boolInput" onchange="toggleBool()">
+        <label for="boolInput">Toggle value</label>
+        <div id="MyVariablesboolValueStatus" class="status"></div>
+    </div>
+    
+    <div class="variable-box">
+        <h2>Integer Variable</h2>
+        <p>Current value: <span id="intDisplay" class="value-display">0</span></p>
+        <input type="number" id="intInput" placeholder="Enter new value">
+        <button onclick="writeVariableFromInput('%22MyVariables%22.intValue', 'intInput')">Update</button>
+        <div id="MyVariablesintValueStatus" class="status"></div>
+    </div>
+    
+    <div class="variable-box">
+        <h2>String Variable</h2>
+        <p>Current value: <span id="stringDisplay" class="value-display"></span></p>
+        <input type="text" id="stringInput" placeholder="Enter new text">
+        <button onclick="writeVariableFromInput('%22MyVariables%22.stringValue', 'stringInput')">Update</button>
+        <div id="MyVariablesstringValueStatus" class="status"></div>
+    </div>
+    
+    <div class="debug">
+        <h3>Debug Information:</h3>
+        <p id="debugInfo"></p>
+        <p id="requestStatus"></p>
+        <p id="responseDebug"></p>
+    </div>
+</div>
+</body>
+</html>
