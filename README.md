@@ -54,6 +54,7 @@ This Web interface connects to a S7-1200/1500 Siemens S7 PLC (Programmable Logic
 ### 1. Initial Page Load
 
 When you Navigate to _http://[PLC-IP]/awp/[ApplicationName]/[Default_HTML_Page]_ in your browser, e.g. __http://192.168.0.2/awp/AJAX/plc-ajax-with-debug.html__
+For the fully working application with the ".dat" functionality, use the two files: plc-ajax-fixedAll, and read_variables.dat. therefore, open __http://192.168.0.2/awp/AJAX/plc-ajax-fixedAll.html__
 
 - The browser requests the page from the PLC web server
 - The PLC processes special tags like `<!-- AWP_In_Variable Name='"MyVariables".boolValue' -->` which tell the PLC which variables to expose
